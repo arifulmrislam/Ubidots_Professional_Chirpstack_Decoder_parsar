@@ -1,0 +1,62 @@
+import requests
+import time
+import base64
+import json
+
+BASE_URL = "https://industrial.api.ubidots.com"
+
+REQUESTS_FUNCTIONS = {"get": requests.get, "post": requests.post}
+
+def main(args):
+    print(args)
+
+    token = args.get("token")
+    device_label = get_device_label(args)
+    payload = json.loads(args.get("objectJSON"))
+    req = update_device(device_label, payload, token)
+
+    return {"status_code": req.status_code, "res": req.json()}
+
+
+def get_device_label(data):
+    label_b64 = base64.b64decode(data.get("devEUI"))
+    return label_b64.hex()
+
+def update_device(device, payload, token):
+    url = "{}/api/v1.6/devices/{}".format(BASE_URL, device)
+    headers = {"X-Auth-Token": token, "Content-Type": "application/json"}
+
+    req = create_request(url, headers, payload, attempts=5, request_type="post")
+    
+    return req
+
+def create_request(url, headers, data, attempts, request_type):
+    """
+    Function to create a request to the server
+    """
+
+    request_func = REQUESTS_FUNCTIONS.get(request_type)
+
+    kwargs = {"url": url, "headers": headers}
+
+    if request_type == "post":
+        kwargs["json"] = data
+
+    try:
+        req = request_func(**kwargs)
+        print("[INFO] Request result: {}".format(req.text))
+        status_code = req.status_code
+        time.sleep(1)
+
+        while status_code >= 400 and attempts < 5:
+            req = request_func(**kwargs)
+            print("[INFO] Request result: {}".format(req.text))
+            status_code = req.status_code
+            attempts += 1
+            time.sleep(1)
+
+        return req
+    except Exception as e:
+        print("[ERROR] There was an error with the request, details:")
+        print(e)
+        return None
